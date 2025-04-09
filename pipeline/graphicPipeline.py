@@ -137,6 +137,84 @@ class GraphicPipeline:
                     fragments.append(Fragment(i,j,z, interpolated_data))
 
         return fragments
+
+    def RasterizerMSAA(self, v0, v1, v2) :
+        fragments = []
+
+        #culling back face
+        area = edgeSide(v0,v1,v2)
+        if area < 0 :
+            return fragments
+        
+        
+        #AABBox computation
+        #compute vertex coordinates in screen space
+        v0_image = np.array([0,0])
+        v0_image[0] = (v0[0]+1.0)/2.0 * self.width 
+        v0_image[1] = ((v0[1]+1.0)/2.0) * self.height 
+
+        v1_image = np.array([0,0])
+        v1_image[0] = (v1[0]+1.0)/2.0 * self.width 
+        v1_image[1] = ((v1[1]+1.0)/2.0) * self.height 
+
+        v2_image = np.array([0,0])
+        v2_image[0] = (v2[0]+1.0)/2.0 * self.width 
+        v2_image[1] = (v2[1]+1.0)/2.0 * self.height 
+
+        #compute the two point forming the AABBox
+        A = np.min(np.array([v0_image,v1_image,v2_image]), axis = 0)
+        B = np.max(np.array([v0_image,v1_image,v2_image]), axis = 0)
+
+        #cliping the bounding box with the borders of the image
+        max_image = np.array([self.width-1,self.height-1])
+        min_image = np.array([0.0,0.0])
+
+        A  = np.max(np.array([A,min_image]),axis = 0)
+        B  = np.min(np.array([B,max_image]),axis = 0)
+        
+        #cast bounding box to int
+        A = A.astype(int)
+        B = B.astype(int)
+        #Compensate rounding of int cast
+        B = B + 1
+
+        # 4-Rook sampling pattern
+        sample_offsets = [
+            (1/8, 3/8), (-3/8, 1/8), (3/8, -1/8), (-1/8, -3/8)
+        ]
+
+
+        # For each pixel in the bounding box
+        for j in range(A[1], B[1]):
+            for i in range(A[0], B[0]):
+                pixel_fragments = []
+                for offset in sample_offsets:
+                    x = ((i + offset[0]) / self.width) * 2.0 - 1
+                    y = ((j + offset[1]) / self.height) * 2.0 - 1
+                    p = np.array([x, y])
+
+                    area0 = edgeSide(p, v0, v1)
+                    area1 = edgeSide(p, v1, v2)
+                    area2 = edgeSide(p, v2, v0)
+
+                    # Test if the sample point is inside the triangle
+                    if area0 >= 0 and area1 >= 0 and area2 >= 0:
+                        lambda0 = area1 / area
+                        lambda1 = area2 / area
+                        lambda2 = area0 / area
+
+                        z = lambda0 * v0[2] + lambda1 * v1[2] + lambda2 * v2[2]
+                        interpolated_data = v0[3:] * lambda0 + v1[3:] * lambda1 + v2[3:] * lambda2
+
+                        pixel_fragments.append(Fragment(i, j, z, interpolated_data))
+
+                # Average the fragments for this pixel
+                if pixel_fragments:
+                    avg_depth = np.mean([f.depth for f in pixel_fragments])
+                    avg_data = np.mean([f.interpolated_data for f in pixel_fragments], axis=0)
+                    fragments.append(Fragment(i, j, avg_depth, avg_data))
+
+        return fragments    
     
     def fragmentShader(self,fragment,data):
         N = fragment.interpolated_data[0:3]
@@ -167,7 +245,7 @@ class GraphicPipeline:
 
         fragment.output = color
 
-    def draw(self, vertices, triangles, data):
+    def draw(self, vertices, triangles, data, MSAA) :
         #Calling vertex shader
         self.newVertices = np.zeros((vertices.shape[0], 14))
 
@@ -177,7 +255,10 @@ class GraphicPipeline:
         fragments = []
         #Calling Rasterizer
         for i in triangles :
-            fragments.extend(self.Rasterizer(self.newVertices[i[0]], self.newVertices[i[1]], self.newVertices[i[2]]))
+            if(MSAA) :
+                fragments.extend(self.RasterizerMSAA(self.newVertices[i[0]], self.newVertices[i[1]], self.newVertices[i[2]]))
+            else :
+                fragments.extend(self.Rasterizer(self.newVertices[i[0]], self.newVertices[i[1]], self.newVertices[i[2]]))
         
         for f in fragments:
             self.fragmentShader(f,data)
