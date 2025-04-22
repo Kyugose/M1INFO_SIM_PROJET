@@ -213,7 +213,7 @@ class GraphicPipeline:
         for y in range(A[1], B[1]):
             for x in range(A[0], B[0]):
                 coverage_mask = 0
-                fragments_in_pixel = []
+                best_fragment = None
     
                 for dx, dy in sample_positions:
                     px = ((x + dx) / self.width) * 2 - 1
@@ -226,15 +226,14 @@ class GraphicPipeline:
     
                     if e0 >= 0 and e1 >= 0 and e2 >= 0:
                         coverage_mask += 1
-                        l0, l1, l2 = e1/area, e2/area, e0/area
-                        z = l0*v0[2] + l1*v1[2] + l2*v2[2]
-                        interp_data = l0*v0[3:] + l1*v1[3:] + l2*v2[3:]
-                        fragments_in_pixel.append(Fragment(x, y, z, interp_data))
+                        if best_fragment is None:
+                            l0, l1, l2 = e1/area, e2/area, e0/area
+                            z = l0*v0[2] + l1*v1[2] + l2*v2[2]
+                            interp_data = l0*v0[3:] + l1*v1[3:] + l2*v2[3:]
+                            best_fragment = Fragment(x, y, z, interp_data)
     
                 if coverage_mask >= 4:  # Au moins 50% de couverture
-                    if fragments_in_pixel:
-                        central_fragment = fragments_in_pixel[len(fragments_in_pixel)//2]
-                        fragments.append(central_fragment)
+                    fragments.append(best_fragment)
     
         return fragments  
     
