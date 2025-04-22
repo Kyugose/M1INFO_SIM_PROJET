@@ -138,83 +138,105 @@ class GraphicPipeline:
 
         return fragments
 
-    def RasterizerMSAA(self, v0, v1, v2) :
+    def RasterizerMSAA(self, v0, v1, v2):
         fragments = []
-
-        #culling back face
-        area = edgeSide(v0,v1,v2)
-        if area < 0 :
+        area = edgeSide(v0, v1, v2)
+        if area < 0: 
             return fragments
-        
-        
-        #AABBox computation
-        #compute vertex coordinates in screen space
-        v0_image = np.array([0,0])
-        v0_image[0] = (v0[0]+1.0)/2.0 * self.width 
-        v0_image[1] = ((v0[1]+1.0)/2.0) * self.height 
 
-        v1_image = np.array([0,0])
-        v1_image[0] = (v1[0]+1.0)/2.0 * self.width 
-        v1_image[1] = ((v1[1]+1.0)/2.0) * self.height 
+        # Calcul du AABB (Bounding Box)
+        v0_img = np.array([(v0[0] + 1) / 2 * self.width, ((v0[1] + 1) / 2) * self.height])
+        v1_img = np.array([(v1[0] + 1) / 2 * self.width, ((v1[1] + 1) / 2) * self.height])
+        v2_img = np.array([(v2[0] + 1) / 2 * self.width, ((v2[1] + 1) / 2) * self.height])
 
-        v2_image = np.array([0,0])
-        v2_image[0] = (v2[0]+1.0)/2.0 * self.width 
-        v2_image[1] = (v2[1]+1.0)/2.0 * self.height 
+        A = np.min([v0_img, v1_img, v2_img], axis=0).astype(int)
+        B = np.max([v0_img, v1_img, v2_img], axis=0).astype(int) + 1
 
-        #compute the two point forming the AABBox
-        A = np.min(np.array([v0_image,v1_image,v2_image]), axis = 0)
-        B = np.max(np.array([v0_image,v1_image,v2_image]), axis = 0)
-
-        #cliping the bounding box with the borders of the image
-        max_image = np.array([self.width-1,self.height-1])
-        min_image = np.array([0.0,0.0])
-
-        A  = np.max(np.array([A,min_image]),axis = 0)
-        B  = np.min(np.array([B,max_image]),axis = 0)
-        
-        #cast bounding box to int
-        A = A.astype(int)
-        B = B.astype(int)
-        #Compensate rounding of int cast
-        B = B + 1
-
-        # 4-Rook sampling pattern
-        sample_offsets = [
-            (1/8, 3/8), (-3/8, 1/8), (3/8, -1/8), (-1/8, -3/8)
+        # Schéma d'échantillonnage MSAA x4 
+        sample_positions = [
+            (0.25, 0.25), (0.75, 0.25),
+            (0.25, 0.75), (0.75, 0.75)
         ]
 
+        for y in range(A[1], B[1]):
+            for x in range(A[0], B[0]):
+                coverage_mask = 0
+                best_fragment = None
 
-        # For each pixel in the bounding box
-        for j in range(A[1], B[1]):
-            for i in range(A[0], B[0]):
-                pixel_fragments = []
-                for offset in sample_offsets:
-                    x = ((i + offset[0]) / self.width) * 2.0 - 1
-                    y = ((j + offset[1]) / self.height) * 2.0 - 1
-                    p = np.array([x, y])
+                for dx, dy in sample_positions:
+                    # Conversion en coordonnées normalisées (-1 à 1)
+                    px = ((x + dx) / self.width) * 2 - 1
+                    py = ((y + dy) / self.height) * 2 - 1
+                    p = np.array([px, py])
 
-                    area0 = edgeSide(p, v0, v1)
-                    area1 = edgeSide(p, v1, v2)
-                    area2 = edgeSide(p, v2, v0)
+                    # Test d'inclusion dans le triangle
+                    e0 = edgeSide(p, v0, v1)
+                    e1 = edgeSide(p, v1, v2)
+                    e2 = edgeSide(p, v2, v0)
 
-                    # Test if the sample point is inside the triangle
-                    if area0 >= 0 and area1 >= 0 and area2 >= 0:
-                        lambda0 = area1 / area
-                        lambda1 = area2 / area
-                        lambda2 = area0 / area
+                    if e0 >= 0 and e1 >= 0 and e2 >= 0:
+                        coverage_mask += 1
+                        if best_fragment is None:
+                            l0, l1, l2 = e1/area, e2/area, e0/area
+                            z = l0*v0[2] + l1*v1[2] + l2*v2[2]
+                            interp_data = l0*v0[3:] + l1*v1[3:] + l2*v2[3:]
+                            best_fragment = Fragment(x, y, z, interp_data)
 
-                        z = lambda0 * v0[2] + lambda1 * v1[2] + lambda2 * v2[2]
-                        interpolated_data = v0[3:] * lambda0 + v1[3:] * lambda1 + v2[3:] * lambda2
+                # Si au moins 2 sous-pixels sont couverts 50% -> garde le fragment
+                if coverage_mask >= 2:
+                    fragments.append(best_fragment)
 
-                        pixel_fragments.append(Fragment(i, j, z, interpolated_data))
-
-                # Average the fragments for this pixel
-                if pixel_fragments:
-                    avg_depth = np.mean([f.depth for f in pixel_fragments])
-                    avg_data = np.mean([f.interpolated_data for f in pixel_fragments], axis=0)
-                    fragments.append(Fragment(i, j, avg_depth, avg_data))
-
-        return fragments    
+        return fragments
+        
+    def RasterizerMSAA8x(self, v0, v1, v2):
+        fragments = []
+        area = edgeSide(v0, v1, v2)
+        if area < 0:
+            return []  
+    
+        # Calcul du AABB
+        v0_img = np.array([(v0[0] + 1) / 2 * self.width, ((v0[1] + 1) / 2) * self.height])
+        v1_img = np.array([(v1[0] + 1) / 2 * self.width, ((v1[1] + 1) / 2) * self.height])
+        v2_img = np.array([(v2[0] + 1) / 2 * self.width, ((v2[1] + 1) / 2) * self.height])
+    
+        A = np.min([v0_img, v1_img, v2_img], axis=0).astype(int)
+        B = np.max([v0_img, v1_img, v2_img], axis=0).astype(int) + 1
+    
+        # Schéma d'échantillonnage MSAA x8 (rotated grid)
+        sample_positions = [
+            (0.0625, 0.1875), (0.3125, 0.4375), 
+            (0.6875, 0.0625), (0.9375, 0.3125),
+            (0.1875, 0.8125), (0.4375, 0.9375),
+            (0.8125, 0.5625), (0.5625, 0.6875)
+        ]
+    
+        for y in range(A[1], B[1]):
+            for x in range(A[0], B[0]):
+                coverage_mask = 0
+                fragments_in_pixel = []
+    
+                for dx, dy in sample_positions:
+                    px = ((x + dx) / self.width) * 2 - 1
+                    py = ((y + dy) / self.height) * 2 - 1
+                    p = np.array([px, py])
+    
+                    e0 = edgeSide(p, v0, v1)
+                    e1 = edgeSide(p, v1, v2)
+                    e2 = edgeSide(p, v2, v0)
+    
+                    if e0 >= 0 and e1 >= 0 and e2 >= 0:
+                        coverage_mask += 1
+                        l0, l1, l2 = e1/area, e2/area, e0/area
+                        z = l0*v0[2] + l1*v1[2] + l2*v2[2]
+                        interp_data = l0*v0[3:] + l1*v1[3:] + l2*v2[3:]
+                        fragments_in_pixel.append(Fragment(x, y, z, interp_data))
+    
+                if coverage_mask >= 4:  # Au moins 50% de couverture
+                    if fragments_in_pixel:
+                        central_fragment = fragments_in_pixel[len(fragments_in_pixel)//2]
+                        fragments.append(central_fragment)
+    
+        return fragments  
     
     def fragmentShader(self,fragment,data):
         N = fragment.interpolated_data[0:3]
@@ -245,7 +267,7 @@ class GraphicPipeline:
 
         fragment.output = color
 
-    def draw(self, vertices, triangles, data, MSAA) :
+    def draw(self, vertices, triangles, data, MSAA, MSAA8x = False) :
         #Calling vertex shader
         self.newVertices = np.zeros((vertices.shape[0], 14))
 
@@ -259,6 +281,8 @@ class GraphicPipeline:
                 fragments.extend(self.RasterizerMSAA(self.newVertices[i[0]], self.newVertices[i[1]], self.newVertices[i[2]]))
             else :
                 fragments.extend(self.Rasterizer(self.newVertices[i[0]], self.newVertices[i[1]], self.newVertices[i[2]]))
+            if MSAA8x:
+                fragments.extend(self.RasterizerMSAA8x(self.newVertices[i[0]], self.newVertices[i[1]], self.newVertices[i[2]]))
         
         for f in fragments:
             self.fragmentShader(f,data)

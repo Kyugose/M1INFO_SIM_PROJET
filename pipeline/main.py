@@ -57,28 +57,40 @@ data = dict([
 
 # Rendu sans MSAA
 start_no_msaa = time.time()
-pipeline.draw(vertices, triangles, data, False)  # MSAA désactivé
+pipeline.draw(vertices, triangles, data, False,False)  # MSAA désactivé
 end_no_msaa = time.time()
 print(f"Temps de rendu sans MSAA : {end_no_msaa - start_no_msaa:.4f} secondes")
 image_no_msaa = pipeline.image.copy()
 
 # Rendu avec MSAA
 start_msaa = time.time()
-pipeline.draw(vertices, triangles, data, True)  # MSAA activé
+pipeline.draw(vertices, triangles, data, True,False)  # MSAA activé
 end_msaa = time.time()
-print(f"Temps de rendu avec MSAA : {end_msaa - start_msaa:.4f} secondes")
+print(f"Temps de rendu avec MSAA x4: {end_msaa - start_msaa:.4f} secondes")
 image_msaa = pipeline.image.copy()
 
 import matplotlib.pyplot as plt
+
+# Rendu avec MSAA x8
+start_msaa8x = time.time()
+pipeline.draw(vertices, triangles, data, False, True)  # MSAA x8 activé
+end_msaa8x = time.time()
+print(f"Temps de rendu avec MSAA x8 : {end_msaa8x - start_msaa8x:.4f} secondes")
+image_msaa8x = pipeline.image.copy()
+
 # Affichage des résultats
-fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 axes[0].imshow(image_no_msaa)
 axes[0].set_title("Sans MSAA")
 axes[0].axis('off')
 
 axes[1].imshow(image_msaa)
-axes[1].set_title("Avec MSAA")
+axes[1].set_title("Avec MSAA x4")
 axes[1].axis('off')
+
+axes[2].imshow(image_msaa8x)
+axes[2].set_title("Avec MSAA x8")
+axes[2].axis('off')
 
 plt.tight_layout()
 plt.show()
