@@ -224,20 +224,20 @@ class GraphicPipeline:
         self.image = np.zeros((self.height, self.width, 3))
         
         # Préparer les buffers selon le mode
-        if MSAA:
-            # Mode MSAA 
-            self.msaaBuffer = np.zeros((self.height, self.width, self.samples, 3))
-            self.msaaDepth = np.ones((self.height, self.width, self.samples))
-            self.coverage = np.zeros((self.height, self.width), dtype=int)
-        else:
-            # Mode normal - buffer simple
-            self.singleBuffer = np.zeros((self.height, self.width, 3))
-            self.singleDepth = np.ones((self.height, self.width))
         if MSAA8x:
             # Mode MSAA 8x
             self.msaaBuffer = np.zeros((self.height, self.width, 8, 3))
             self.msaaDepth = np.ones((self.height, self.width, 8))
             self.coverage = np.zeros((self.height, self.width), dtype=int)
+        elif MSAA:
+            # Mode MSAA 4x
+            self.msaaBuffer = np.zeros((self.height, self.width, self.samples, 3))
+            self.msaaDepth = np.ones((self.height, self.width, self.samples))
+            self.coverage = np.zeros((self.height, self.width), dtype=int)
+        else:
+            # Mode normal 
+            self.singleBuffer = np.zeros((self.height, self.width, 3))
+            self.singleDepth = np.ones((self.height, self.width))
         
         self.newVertices = np.zeros((vertices.shape[0], 14))
         for i in range(vertices.shape[0]):
@@ -245,10 +245,10 @@ class GraphicPipeline:
         
         fragments = []
         for i in triangles:
-            if MSAA:
-                fragments.extend(self.RasterizerMSAA(self.newVertices[i[0]], self.newVertices[i[1]], self.newVertices[i[2]]))
-            elif MSAA8x:
+            if MSAA8x:
                 fragments.extend(self.RasterizerMSAAx8(self.newVertices[i[0]], self.newVertices[i[1]], self.newVertices[i[2]]))
+            elif MSAA:
+                fragments.extend(self.RasterizerMSAA(self.newVertices[i[0]], self.newVertices[i[1]], self.newVertices[i[2]]))
             else:
                 fragments.extend(self.Rasterizer(self.newVertices[i[0]], self.newVertices[i[1]], self.newVertices[i[2]]))
         
@@ -267,11 +267,16 @@ class GraphicPipeline:
                 if self.singleDepth[f.y, f.x] > f.depth:
                     self.singleDepth[f.y, f.x] = f.depth
                     self.singleBuffer[f.y, f.x] = f.output
+        
         if MSAA or MSAA8x:
             # Résolution MSAA
+            if MSAA:
+                samples_count = 4
+            elif MSAA8x:
+                samples_count = 8
             for y in range(self.height):
                 for x in range(self.width):
                     if self.coverage[y, x] > 0:
-                        self.image[y, x] = np.sum(self.msaaBuffer[y, x], axis=0) / self.samples
+                        self.image[y, x] = np.sum(self.msaaBuffer[y, x], axis=0) / samples_count
         else:
             self.image = self.singleBuffer.copy()
