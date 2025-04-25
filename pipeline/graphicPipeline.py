@@ -1,8 +1,12 @@
 import numpy as np
 
 def sample(texture, u, v):
-    u = int(u * texture.shape[0])
-    v = int((1 - v) * texture.shape[1])
+    # Contraindre u et v dans l'intervalle [0, 1]
+    u = np.clip(u, 0, 1)
+    v = np.clip(v, 0, 1)
+
+    u = int(u * (texture.shape[1] - 1))  
+    v = int((1 - v) * (texture.shape[0] - 1))  
     return texture[v, u] / 255.0
 
 class Fragment:
