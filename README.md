@@ -2,7 +2,7 @@
 
 Dans le répertoire Pipeline :
 
-Execution du pipilane sur suzanne
+Execution du pipeline sur suzanne
 
 ```bash
 python3 main.py
